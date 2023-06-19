@@ -45,6 +45,7 @@ class Base(Module):
         self.num_conv_layers = num_conv_layers
         self.convs = ModuleList()
         self.batch_norms = ModuleList()
+        # self.batch_norms = BatchNorm(hidden_dim)
         self.num_nodes = num_nodes
         ##One head represent one variable
         ##Head can have different sizes, head_dims
@@ -115,6 +116,7 @@ class Base(Module):
         return conv_args
 
     def _freeze_conv(self):
+        # for module in [self.convs]:
         for module in [self.convs, self.batch_norms]:
             for layer in module:
                 for param in layer.parameters():
@@ -247,8 +249,10 @@ class Base(Module):
         ### encoder part ####
         conv_args = self._conv_args(data)
         for conv, batch_norm in zip(self.convs, self.batch_norms):
-            c = conv(x=x, **conv_args)
-            x = F.relu(batch_norm(c))
+        # for conv in self.convs:
+            x = conv(x=x, **conv_args)
+            x = F.relu(batch_norm(x))
+        # x = self.batch_norms(x)
 
         #### multi-head decoder part####
         # shared dense layers for graph level output
