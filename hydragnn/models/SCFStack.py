@@ -12,7 +12,7 @@
 from typing import Optional
 
 import torch
-from torch.nn import Linear
+from torch.nn import Identity, Linear
 from torch_geometric.nn import Sequential
 from torch_geometric.nn.models.schnet import (
     CFConv,
@@ -45,6 +45,15 @@ class SCFStack(Base):
         self.interaction_graph = RadiusInteractionGraph(radius, max_neighbours)
 
         pass
+
+
+    def _init_conv(self):
+        self.graph_convs.append(self.get_conv(self.input_dim, self.hidden_dim))
+        self.feature_convs.append(Identity())
+        for _ in range(self.num_conv_layers - 1):
+            graph_conv = self.get_conv(self.hidden_dim, self.hidden_dim)
+            self.graph_convs.append(graph_conv)
+            self.feature_convs.append(Identity())
 
     def get_conv(self, input_dim, output_dim):
         mlp = Sequential(

@@ -68,6 +68,14 @@ class DIMEStack(Base):
 
         pass
 
+    def _init_conv(self):
+        self.graph_convs.append(self.get_conv(self.input_dim, self.hidden_dim))
+        self.feature_convs.append(Identity())
+        for _ in range(self.num_conv_layers - 1):
+            graph_conv = self.get_conv(self.hidden_dim, self.hidden_dim)
+            self.graph_convs.append(graph_conv)
+            self.feature_convs.append(Identity())
+
     def get_conv(self, input_dim, output_dim):
         hidden_dim = output_dim if input_dim == 1 else input_dim
         assert (
