@@ -12,7 +12,8 @@
 from typing import Optional
 
 import torch
-from torch.nn import Linear, Sequential
+from torch.nn import Linear
+from torch_geometric.nn import Sequential
 from torch_geometric.nn.models.schnet import (
     CFConv,
     GaussianSmearing,
@@ -47,18 +48,29 @@ class SCFStack(Base):
 
     def get_conv(self, input_dim, output_dim):
         mlp = Sequential(
-            Linear(self.num_gaussians, self.num_filters),
-            ShiftedSoftplus(),
-            Linear(self.num_filters, self.num_filters),
+            "x",
+            [
+            (Linear(self.num_gaussians, self.num_filters), "x -> x"),
+            # (ShiftedSoftplus(), "x -> x"),
+            # (Linear(self.num_filters, self.num_filters), "x -> x"),
+            ]
         )
 
-        return CFConv(
+        conv = CFConv(
             in_channels=input_dim,
             out_channels=output_dim,
             nn=mlp,
             num_filters=self.num_filters,
             cutoff=self.radius,
         )
+
+        return Sequential(
+            "x, edge_index, edge_weight, edge_attr",
+            [
+                (conv, "x, edge_index, edge_weight, edge_attr -> x"),
+            ],
+        )
+
 
     def _conv_args(self, data):
         if (data.edge_attr is not None) and (self.use_edge_attr):
