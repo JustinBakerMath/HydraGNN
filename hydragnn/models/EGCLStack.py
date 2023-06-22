@@ -25,7 +25,7 @@ class EGCLStack(Base):
         **kwargs,
     ):
 
-        self.edge_attr_dim =  0 if edge_attr_dim is None else edge_attr_dim
+        self.edge_dim =  0 if edge_attr_dim is None else edge_attr_dim # Must be named edge_dim to trigger use by Base
         super().__init__(*args, **kwargs)
         pass
 
@@ -33,7 +33,7 @@ class EGCLStack(Base):
         egcl =  E_GCL(input_channels=input_dim,
                      output_channels=output_dim,
                      hidden_channels=self.hidden_dim,
-                     edge_attr_dim=self.edge_attr_dim)
+                     edge_attr_dim=self.edge_dim)
         return Sequential(
             "x, edge_index, coord, edge_attr",
             [
@@ -46,7 +46,7 @@ class EGCLStack(Base):
         conv_args = {
             "edge_index": data.edge_index,
             "coord": data.pos,
-            "edge_attr": data.edge_weight,
+            "edge_attr": data.edge_attr,
         }
 
         return conv_args
@@ -88,7 +88,7 @@ class E_GCL(nn.Module):
             edge_attr_dim=0,
             nodes_attr_dim=0,
             act_fn=nn.ReLU(),
-            recurrent=True,
+            recurrent=False,
             coords_weight=1.0,
             attention=False,
             clamp=False,
@@ -105,6 +105,7 @@ class E_GCL(nn.Module):
         self.tanh = tanh
         edge_coords_nf = 1
         self.coord_mlp = coord_mlp
+        self.edge_attr_dim = edge_attr_dim
 
         self.edge_mlp = nn.Sequential(
             nn.Linear(input_edge + edge_coords_nf + edge_attr_dim, hidden_channels),
