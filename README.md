@@ -1,3 +1,7 @@
+# HydraGNN - GRSI 2023
+
+Branch for documentation and experimental progress for the application of physics informed message passing layers to material property prediction in metal alloys and inorganic compounds done by Justin Baker as a part of the Graduate Research Student Internship over the Summer of 2023.
+
 # HydraGNN
 
 Distributed PyTorch implementation of multi-headed graph convolutional neural networks
@@ -74,7 +78,7 @@ There are many options for HydraGNN; the dataset and model type are particularly
 important:
  - `["Verbosity"]["level"]`: `0`, `1`, `2`, `3`, `4`
  - `["Dataset"]["name"]`: `CuAu_32atoms`, `FePt_32atoms`, `FeSi_1024atoms`
- - `["NeuralNetwork"]["Architecture"]["model_type"]`: `PNA`, `MFC`, `GIN`, `GAT`, `CGCNN`, `SchNet`, `DimeNet`, `EGNN`
+ - `["NeuralNetwork"]["Architecture"]["model_type"]`: `PNA`, `MFC`, `GIN`, `GAT`, `CGCNN`, `SchNet`, `DimeNet`
 
 ### Citations
 "HydraGNN: Distributed PyTorch implementation of multi-headed graph convolutional neural networks", Copyright ID#: 81929619

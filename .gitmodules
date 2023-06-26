@@ -1,0 +1,6 @@
+[submodule "examples_grsi"]
+	path = examples_grsi
+	url = https://github.com/JustinBakerMath/examples_grsi.git
+[submodule "grsi_su2023"]
+	path = grsi_su2023
+	url = https://github.com/JustinBakerMath/grsi_su2023.git
