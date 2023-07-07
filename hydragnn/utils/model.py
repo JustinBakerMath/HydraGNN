@@ -174,12 +174,12 @@ class Checkpoint:
 
     def __init__(
         self,
-        frequency: int = 10,
+        delay: int = 0,
         path: str = "./logs/",
-        name: str = "model.pk",
+        name: str = "model",
     ):
         self.count = 0
-        self.frequency = frequency
+        self.delay = delay
         self.path = path
         self.name = name
         self.min_perf_metric = float("inf")
@@ -187,12 +187,11 @@ class Checkpoint:
 
     def __call__(self, model, optimizer, perf_metric):
         if (perf_metric > self.min_perf_metric + self.min_delta) or (
-            self.count <= self.frequency
+            self.count <= self.delay
         ):
             self.count += 1
             return False
         else:
             self.min_perf_metric = perf_metric
-            self.count = 0
             save_model(model, optimizer, name=self.name, path=self.path)
             return True

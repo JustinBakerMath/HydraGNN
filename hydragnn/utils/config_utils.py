@@ -96,7 +96,7 @@ def update_config(config, train_loader, val_loader, test_loader):
 
 def update_config_edge_dim(config):
     config["edge_dim"] = None
-    edge_models = ["PNA", "CGCNN", "SchNet", "EGNN"]
+    edge_models = ["PNA", "CGCNN", "SchNet", "EGNN", "SGNN"]
     if "edge_features" in config and config["edge_features"]:
         assert (
             config["model_type"] in edge_models
