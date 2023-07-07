@@ -40,16 +40,16 @@ class SGCLStack(Base):
             self.feature_layers.append(nn.Identity())
 
     def get_conv(self, input_dim, output_dim):
-        gcl = S_GCL(
+        egcl = S_GCL(
             input_channels=input_dim,
             output_channels=output_dim,
             hidden_channels=self.hidden_dim,
             edge_attr_dim=self.edge_dim,
         )
         return Sequential(
-            "x, edge_index, coord, edge_attr, batch",
+            "x, edge_index, coord, edge_attr",
             [
-                (gcl, "x, edge_index, coord, edge_attr, batch -> x"),
+                (egcl, "x, edge_index, coord, edge_attr -> x"),
             ],
         )
 
@@ -59,20 +59,18 @@ class SGCLStack(Base):
                 "edge_index": data.edge_index,
                 "coord": data.pos,
                 "edge_attr": data.edge_attr,
-                "batch": data.batch,
             }
         else:
             conv_args = {
                 "edge_index": data.edge_index,
                 "coord": data.pos,
                 "edge_attr": None,
-                "batch": data.batch,
             }
 
         return conv_args
 
     def __str__(self):
-        return "SGCLStack"
+        return "EGCLStack"
 
 
 """
@@ -167,20 +165,23 @@ class S_GCL(nn.Module):
         self.act_fn = act_fn
         pass
 
-    def edge_model(self, source, target, radial, edge_attr, batch):
+    def edge_model(self, source, target, radial, edge_attr):
+        source_normed = self.layer_norm(source)
+        target_normed = self.layer_norm(target)
         if edge_attr is None:  # Unused.
-            out = torch.cat([source, target, radial], dim=1)
+            out = torch.cat([source_normed, target_normed, radial], dim=1)
         else:
-            out = torch.cat([source, target, radial, edge_attr], dim=1)
+            out = torch.cat([source_normed, target_normed, radial, edge_attr], dim=1)
         out = self.edge_mlp(out)
         if self.attention:
             att_val = self.att_mlp(out)
             out = out * att_val
         return out
 
-    def node_model(self, x, x_normed, edge_index, edge_attr, node_attr, batch):
+    def node_model(self, x, edge_index, edge_attr, node_attr):
         row, col = edge_index
         agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0)) # m_i
+        x_normed = self.layer_norm(x)
         if node_attr is not None:
             agg = torch.cat([x_normed, agg, node_attr], dim=1)
         else:
@@ -211,15 +212,14 @@ class S_GCL(nn.Module):
 
         return radial, coord_diff
 
-    def forward(self, x, edge_index, coord, edge_attr, batch, node_attr=None):
+    def forward(self, x, edge_index, coord, edge_attr, node_attr=None):
         row, col = edge_index
         radial, coord_diff = self.coord2radial(edge_index, coord)
         # Message Passing
-        x_normed = self.layer_norm(x, batch=batch)
-        edge_feat = self.edge_model(x_normed[row], x_normed[col], radial, edge_attr, batch)
+        edge_feat = self.edge_model(x[row], x[col], radial, edge_attr)
         if self.coord_mlp:
             coord = self.coord_model(coord, edge_index, coord_diff, edge_feat)
-        x, agg = self.node_model(x, x_normed, edge_index, edge_feat, node_attr, batch)
+        x, agg = self.node_model(x, edge_index, edge_feat, node_attr)
         return x  # , coord, edge_attr
 
 
