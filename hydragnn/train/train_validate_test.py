@@ -190,6 +190,7 @@ def train_validate_test(
                 print_distributed(
                     verbosity, "Creating Checkpoint: %f" % checkpoint.min_perf_metric
                 )
+                best_test = reduce_values_ranks(test_loss).item()
             print_distributed(
                 verbosity, "Best Performance Metric: %f" % checkpoint.min_perf_metric
             )
@@ -251,6 +252,10 @@ def train_validate_test(
             model.module.loss_weights,
             config["Variables_of_interest"]["output_names"],
         )
+    if SaveCheckpoint:
+        return checkpoint.min_perf_metric, best_test
+    else:
+        return val_loss, test_loss
 
 
 def get_head_indices(model, data):
