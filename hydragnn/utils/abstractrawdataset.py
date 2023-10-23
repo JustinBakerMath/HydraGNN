@@ -22,7 +22,11 @@ from hydragnn.preprocess.utils import (
     get_radius_graph_config,
     get_radius_graph_pbc_config,
 )
-from hydragnn.preprocess.serialized_dataset_loader import update_predicted_values
+from hydragnn.preprocess import (
+    update_predicted_values,
+    update_atom_features,
+    stratified_sampling,
+)
 
 from sklearn.model_selection import StratifiedShuffleSplit
 
@@ -119,6 +123,21 @@ class AbstractRawDataset(AbstractBaseDataset, ABC):
                 self.point_pair_features = config["Dataset"]["Descriptors"][
                     "PointPairFeatures"
                 ]
+
+        # Descriptors about topology of the local environment
+        if self.spherical_coordinates and self.point_pair_features:
+            # FIXME We need to a new function to include both spherical coordinates and point point features together as edge features
+            # Each of the two transformation computes the distance between nodes, and adds it to the set of edge features
+            # A naive simuktaneous utilization of both spherical coordinates and point point features together includes the distance multiple times in the edge-feature vector
+            raise ValueError(
+                "Spherical Coorindates and Point Pair Features cannot be used together in the current version of HydraGNN"
+            )
+
+        if self.spherical_coordinates:
+            self.edge_feature_transform = Spherical(norm=False, cat=False)
+
+        if self.point_pair_features:
+            self.edge_feature_transform = PointPairFeatures(cat=False)
 
         self.subsample_percentage = None
 
@@ -302,19 +321,6 @@ class AbstractRawDataset(AbstractBaseDataset, ABC):
                     / data_object.num_nodes
                 )
 
-    def __update_atom_features(self, atom_features: [AtomFeatures], data: Data):
-        """Updates atom features of a structure. An atom is represented with x,y,z coordinates and associated features.
-
-        Parameters
-        ----------
-        atom_features: [AtomFeatures]
-            List of features to update. Each feature is instance of Enum AtomFeatures.
-        data: Data
-            A Data object representing a structure that has atoms.
-        """
-        feature_indices = [i for i in atom_features]
-        data.x = data.x[:, feature_indices]
-
     def __build_edge(self):
         """Loads the serialized structures data from specified path, computes new edges for the structures based on the maximum number of neighbours and radius. Additionally,
         atom and structure features are updated.
@@ -352,38 +358,41 @@ class AbstractRawDataset(AbstractBaseDataset, ABC):
 
         self.dataset[:] = [compute_edges(data) for data in self.dataset]
 
+        #################################
+        #### COMPUTE EDGE ATTRIBUTES ####
+        #################################
+
         # edge lengths already added manually if using PBC.
-        if not self.periodic_boundary_conditions:
-            compute_edge_lengths = Distance(norm=False, cat=True)
+        # if spherical coordinates or pair point is set up, then skip directly to edge_transformation
+        if (not self.periodic_boundary_conditions) and (
+            not hasattr(self, "edge_feature_transform")
+        ):
             self.dataset[:] = [compute_edge_lengths(data) for data in self.dataset]
 
-        max_edge_length = torch.Tensor([float("-inf")])
+            max_edge_length = torch.Tensor([float("-inf")])
 
-        for data in self.dataset:
-            max_edge_length = torch.max(max_edge_length, torch.max(data.edge_attr))
+            for data in self.dataset:
+                max_edge_length = torch.max(max_edge_length, torch.max(data.edge_attr))
 
-        if self.dist:
-            ## Gather max in parallel
-            device = max_edge_length.device
-            max_edge_length = max_edge_length.to(get_device())
-            torch.distributed.all_reduce(
-                max_edge_length, op=torch.distributed.ReduceOp.MAX
-            )
-            max_edge_length = max_edge_length.to(device)
+            if self.dist:
+                ## Gather max in parallel
+                device = max_edge_length.device
+                max_edge_length = max_edge_length.to(get_device())
+                torch.distributed.all_reduce(
+                    max_edge_length, op=torch.distributed.ReduceOp.MAX
+                )
+                max_edge_length = max_edge_length.to(device)
 
-        # Normalization of the edges
-        for data in self.dataset:
-            data.edge_attr = data.edge_attr / max_edge_length
+            # Normalization of the edges
+            for data in self.dataset:
+                data.edge_attr = data.edge_attr / max_edge_length
 
         # Descriptors about topology of the local environment
-        for data in self.dataset:
-            if self.spherical_coordinates:
-                data = Spherical(data)
-            if self.point_pair_features:
-                data = PointPairFeatures(data)
+        elif hasattr(self, "edge_feature_transform"):
+            self.dataset[:] = [
+                self.edge_feature_transform(data) for data in self.dataset
+            ]
 
-        # Move data to the device, if used. # FIXME: this does not respect the choice set by use_gpu
-        device = get_device(verbosity_level=self.verbosity)
         for data in self.dataset:
             update_predicted_values(
                 self.variables_type,
@@ -393,7 +402,7 @@ class AbstractRawDataset(AbstractBaseDataset, ABC):
                 data,
             )
 
-            self.__update_atom_features(self.input_node_features, data)
+            update_atom_features(self.input_node_features, data)
 
         if "subsample_percentage" in self.variables.keys():
             self.subsample_percentage = self.variables["subsample_percentage"]
@@ -407,47 +416,3 @@ class AbstractRawDataset(AbstractBaseDataset, ABC):
 
     def get(self, idx):
         return self.dataset[idx]
-
-
-def stratified_sampling(dataset: [Data], subsample_percentage: float, verbosity=0):
-    """Given the dataset and the percentage of data you want to extract from it, method will
-    apply stratified sampling where X is the dataset and Y is are the category values for each datapoint.
-    In the case of the structures dataset where each structure contains 2 types of atoms, the category will
-    be constructed in a way: number of atoms of type 1 + number of protons of type 2 * 100.
-
-    Parameters
-    ----------
-    dataset: [Data]
-        A list of Data objects representing a structure that has atoms.
-    subsample_percentage: float
-        Percentage of the dataset.
-
-    Returns
-    ----------
-    [Data]
-        Subsample of the original dataset constructed using stratified sampling.
-    """
-    dataset_categories = []
-    print_distributed(verbosity, "Computing the categories for the whole dataset.")
-    for data in iterate_tqdm(dataset, verbosity):
-        frequencies = torch.bincount(data.x[:, 0].int())
-        frequencies = sorted(frequencies[frequencies > 0].tolist())
-        category = 0
-        for index, frequency in enumerate(frequencies):
-            category += frequency * (100 ** index)
-        dataset_categories.append(category)
-
-    subsample_indices = []
-    subsample = []
-
-    sss = StratifiedShuffleSplit(
-        n_splits=1, train_size=subsample_percentage, random_state=0
-    )
-
-    for subsample_index, rest_of_data_index in sss.split(dataset, dataset_categories):
-        subsample_indices = subsample_index.tolist()
-
-    for index in subsample_indices:
-        subsample.append(dataset[index])
-
-    return subsample
